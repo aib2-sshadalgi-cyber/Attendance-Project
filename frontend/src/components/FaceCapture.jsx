@@ -16,6 +16,7 @@ export function FaceCapture({
   disabled,
   onDescriptor,
   onError,
+  cameraId,
 }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -31,6 +32,19 @@ export function FaceCapture({
     };
   }, []);
 
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      const v = videoRef.current;
+      if (v) {
+        v.srcObject = null;
+      }
+      setStatus('idle');
+      setMsg('');
+    }
+  }, [cameraId]);
+
   async function ensureCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus('nosupport');
@@ -38,8 +52,11 @@ export function FaceCapture({
       throw new Error('no camera api');
     }
     setStatus('requesting');
+    const video = cameraId
+      ? { deviceId: { exact: cameraId }, width: 640, height: 480 }
+      : { facingMode: 'user', width: 640, height: 480 };
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: 640, height: 480 },
+      video,
       audio: false,
     });
     streamRef.current = stream;
@@ -81,7 +98,7 @@ export function FaceCapture({
 
   return (
     <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-2xl bg-slate-900 shadow-inner aspect-video flex items-center justify-center">
+      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl bg-slate-900 shadow-inner">
         <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
         {status !== 'capturing' && status !== 'requesting' && (
           <p className="absolute bottom-3 left-3 right-3 rounded-lg bg-black/40 px-3 py-2 text-center text-sm text-white backdrop-blur">
