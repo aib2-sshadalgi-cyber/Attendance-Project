@@ -10,12 +10,14 @@ const attendanceRoutes = require('./routes/attendance');
 function createApp() {
   const app = express();
 
+  const normalizeOrigin = (value) => value.trim().replace(/\/$/, '');
+
   const origins =
     process.env.CORS_ORIGIN === '*'
       ? true
       : (process.env.CORS_ORIGIN || 'http://localhost:5173')
           .split(',')
-          .map((s) => s.trim())
+          .map(normalizeOrigin)
           .filter(Boolean);
 
   app.use(

@@ -1,25 +1,24 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const bcrypt = require('bcryptjs');
-const { connectDb } = require('../config/db');
-const User = require('../models/User');
-const Student = require('../models/Student');
-const Subject = require('../models/Subject');
-const Lecture = require('../models/Lecture');
-const Attendance = require('../models/Attendance');
+const { connectDb, query } = require('../config/db');
+const users = require('../repos/users');
+const students = require('../repos/students');
+const subjects = require('../repos/subjects');
+const lecturesRepo = require('../repos/lectures');
 
 async function run() {
   await connectDb();
 
-  await Attendance.deleteMany({});
-  await Lecture.deleteMany({});
-  await Subject.deleteMany({});
-  await Student.deleteMany({});
-  await User.deleteMany({});
+  await query('DELETE FROM attendance');
+  await query('DELETE FROM lectures');
+  await query('DELETE FROM students');
+  await query('DELETE FROM subjects');
+  await query('DELETE FROM users');
 
   const salt = await bcrypt.genSalt(10);
   const adminHash = await bcrypt.hash('Admin@123', salt);
 
-  const admin = await User.create({
+  const admin = await users.createUser({
     email: 'admin@college.edu',
     passwordHash: adminHash,
     role: 'admin',
@@ -31,41 +30,37 @@ async function run() {
     { email: 'carol@student.edu', name: 'Carol Lee', roll: 'EE2024101', dept: 'Electrical Engineering' },
   ];
 
-  const students = [];
   for (const s of studentDefs) {
     const h = await bcrypt.hash('Student@123', await bcrypt.genSalt(10));
-    const user = await User.create({ email: s.email, passwordHash: h, role: 'student' });
-    const st = await Student.create({
-      user: user._id,
+    const user = await users.createUser({ email: s.email, passwordHash: h, role: 'student' });
+    await students.createStudent({
+      userId: user.id,
       name: s.name,
       rollNumber: s.roll,
       department: s.dept,
-      faceDescriptor: null,
     });
-    await User.updateOne({ _id: user._id }, { studentProfile: st._id });
-    students.push(st);
   }
 
-  const sub1 = await Subject.create({ name: 'Data Structures', code: 'CS201' });
-  const sub2 = await Subject.create({ name: 'Digital Systems', code: 'EE205' });
+  const sub1 = await subjects.createSubject({ name: 'Data Structures', code: 'CS201' });
+  const sub2 = await subjects.createSubject({ name: 'Digital Systems', code: 'EE205' });
 
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  await Lecture.create({
-    subject: sub1._id,
+  await lecturesRepo.createLecture({
+    subjectId: sub1.id,
     title: 'Week 10 – Trees',
     scheduledAt: now,
+    endsAt: null,
     room: 'Lab A',
-    isActive: true,
   });
-  await Lecture.create({
-    subject: sub2._id,
+  const lec2 =   await lecturesRepo.createLecture({
+    subjectId: sub2.id,
     title: 'Combinational Logic',
     scheduledAt: tomorrow,
+    endsAt: null,
     room: 'Hall 3',
-    isActive: true,
   });
 
   console.log('Seed complete.');

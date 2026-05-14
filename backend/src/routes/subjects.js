@@ -1,13 +1,13 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const Subject = require('../models/Subject');
+const subjects = require('../repos/subjects');
 const { attachUser, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
 router.get('/', attachUser(), requireAuth(['admin', 'student']), async (_req, res) => {
-  const subjects = await Subject.find().sort({ code: 1 }).lean();
-  res.json(subjects.map((s) => ({ id: s._id, name: s.name, code: s.code })));
+  const rows = await subjects.listAll();
+  res.json(rows.map((s) => ({ id: s.id, name: s.name, code: s.code })));
 });
 
 router.use(attachUser(), requireAuth('admin'));
@@ -23,17 +23,17 @@ router.post(
     const name = req.body.name;
     const code = String(req.body.code).toUpperCase();
     try {
-      const subject = await Subject.create({ name, code });
-      res.status(201).json({ id: subject._id, name: subject.name, code: subject.code });
+      const subject = await subjects.createSubject({ name, code });
+      res.status(201).json({ id: subject.id, name: subject.name, code: subject.code });
     } catch (e) {
-      if (e.code === 11000) return res.status(409).json({ message: 'Subject code must be unique' });
+      if (e.code === '23505') return res.status(409).json({ message: 'Subject code must be unique' });
       throw e;
     }
   }
 );
 
 router.delete('/:id', async (req, res) => {
-  await Subject.deleteOne({ _id: req.params.id });
+  await subjects.deleteById(req.params.id);
   res.status(204).send();
 });
 

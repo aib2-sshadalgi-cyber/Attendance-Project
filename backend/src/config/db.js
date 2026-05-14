@@ -11,9 +11,20 @@ function getPool() {
     return cached.pool;
   }
 
-  const connectionString = process.env.DATABASE_URL;
+  const rawConnectionString = process.env.DATABASE_URL;
+  let connectionString = rawConnectionString;
   if (!connectionString) {
     throw new Error('DATABASE_URL is not set');
+  }
+
+  // Keep TLS behavior controlled by pg Pool config to avoid SSL mode parsing differences.
+  try {
+    const parsed = new URL(connectionString);
+    parsed.searchParams.delete('sslmode');
+    parsed.searchParams.delete('ssl');
+    connectionString = parsed.toString();
+  } catch {
+    connectionString = rawConnectionString;
   }
 
   cached.pool = new Pool({
@@ -37,4 +48,20 @@ async function connectDb() {
   return pool;
 }
 
-module.exports = { connectDb, getPool, query };
+async function withTransaction(fn) {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { connectDb, getPool, query, withTransaction };

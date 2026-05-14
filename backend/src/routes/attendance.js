@@ -1,8 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const Attendance = require('../models/Attendance');
-const Lecture = require('../models/Lecture');
-const Student = require('../models/Student');
+const attendanceRepo = require('../repos/attendance');
+const lecturesRepo = require('../repos/lectures');
+const students = require('../repos/students');
 const { attachUser, requireAuth } = require('../middleware/auth');
 const { faceMatch, isValidDescriptor } = require('../utils/faceMatch');
 
@@ -12,55 +12,44 @@ router.use(attachUser(), requireAuth(['admin', 'student']));
 
 router.get('/monitor/:lectureId', requireAuth('admin'), async (req, res) => {
   const { lectureId } = req.params;
-  const lecture = await Lecture.findById(lectureId).populate('subject', 'name code').lean();
-  if (!lecture) return res.status(404).json({ message: 'Lecture not found' });
+  const data = await attendanceRepo.findMonitorByLectureId(lectureId);
+  if (!data) return res.status(404).json({ message: 'Lecture not found' });
 
-  const rows = await Attendance.find({ lecture: lectureId })
-    .populate('student', 'name rollNumber department')
-    .sort({ scannedAt: -1 })
-    .lean();
-
+  const { lecture, records } = data;
   res.json({
     lecture: {
-      id: lecture._id,
+      id: lecture.id,
       title: lecture.title,
       subjectName: lecture.subject?.name,
       subjectCode: lecture.subject?.code,
       scheduledAt: lecture.scheduledAt,
     },
-    records: rows.map((r) => ({
-      studentName: r.student?.name,
-      rollNumber: r.student?.rollNumber,
-      department: r.student?.department,
+    records: records.map((r) => ({
+      studentName: r.studentName,
+      rollNumber: r.rollNumber,
+      department: r.department,
       scannedAt: r.scannedAt,
       status: r.status,
     })),
-    countPresent: rows.length,
+    countPresent: records.length,
   });
 });
 
 router.get('/export', requireAuth('admin'), async (req, res) => {
   const { lectureId } = req.query;
-  const filter = {};
-  if (lectureId) filter.lecture = lectureId;
-
-  const rows = await Attendance.find(filter)
-    .populate('student', 'name rollNumber department')
-    .populate({ path: 'lecture', select: 'title scheduledAt subject', populate: { path: 'subject', select: 'name code' } })
-    .sort({ scannedAt: -1 })
-    .lean();
+  const rows = await attendanceRepo.findForExport(lectureId || null);
 
   const header = ['Subject', 'SubjectCode', 'LectureTitle', 'LectureAt', 'StudentName', 'RollNumber', 'Department', 'Status', 'ScannedAt'];
   const lines = [header.join(',')];
   for (const r of rows) {
     const escaped = [
-      r.lecture?.subject?.name || '',
-      r.lecture?.subject?.code || '',
-      r.lecture?.title || '',
-      r.lecture?.scheduledAt ? new Date(r.lecture.scheduledAt).toISOString() : '',
-      r.student?.name || '',
-      r.student?.rollNumber || '',
-      r.student?.department || '',
+      r.subjectName || '',
+      r.subjectCode || '',
+      r.lectureTitle || '',
+      r.lectureAt ? new Date(r.lectureAt).toISOString() : '',
+      r.studentName || '',
+      r.rollNumber || '',
+      r.department || '',
       r.status || '',
       r.scannedAt ? new Date(r.scannedAt).toISOString() : '',
     ].map((cell) => `"${String(cell).replace(/"/g, '""')}"`);
@@ -75,29 +64,15 @@ router.get('/export', requireAuth('admin'), async (req, res) => {
 
 router.get('/my', async (req, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ message: 'Students only' });
-  const student = await Student.findOne({ user: req.user._id });
+  const student = await students.findByUserId(req.user.id);
   if (!student) return res.status(404).json({ message: 'Student profile missing' });
 
   const { from, to } = req.query;
-  const filter = { student: student._id };
-  let list = await Attendance.find(filter)
-    .populate({
-      path: 'lecture',
-      select: 'title scheduledAt subject',
-      populate: { path: 'subject', select: 'name code' },
-    })
-    .sort({ scannedAt: -1 })
-    .lean();
-
-  if (from || to) {
-    list = list.filter((item) => {
-      const at = item.lecture?.scheduledAt ? new Date(item.lecture.scheduledAt) : null;
-      if (!at) return false;
-      if (from && at < new Date(from)) return false;
-      if (to && at > new Date(to)) return false;
-      return true;
-    });
-  }
+  const list = await attendanceRepo.findMyAttendance(
+    student.id,
+    from ? new Date(from) : null,
+    to ? new Date(to) : null
+  );
 
   const summary = {
     total: list.length,
@@ -107,10 +82,10 @@ router.get('/my', async (req, res) => {
   res.json({
     summary,
     attendance: list.map((a) => ({
-      subjectName: a.lecture?.subject?.name,
-      subjectCode: a.lecture?.subject?.code,
-      lectureTitle: a.lecture?.title,
-      lectureAt: a.lecture?.scheduledAt,
+      subjectName: a.subjectName,
+      subjectCode: a.subjectCode,
+      lectureTitle: a.lectureTitle,
+      lectureAt: a.lectureAt,
       status: a.status,
       scannedAt: a.scannedAt,
     })),
@@ -119,7 +94,7 @@ router.get('/my', async (req, res) => {
 
 router.post(
   '/scan',
-  body('lectureId').isMongoId(),
+  body('lectureId').isUUID(),
   body('faceDescriptor').isArray({ min: 128, max: 128 }),
   async (req, res) => {
     const errors = validationResult(req);
@@ -129,19 +104,19 @@ router.post(
       return res.status(403).json({ message: 'Students only' });
     }
 
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await students.findByUserId(req.user.id);
     if (!student) return res.status(404).json({ message: 'Student profile missing' });
     if (!student.faceDescriptor || !student.faceDescriptor.length) {
       return res.status(400).json({ message: 'Face not registered. Contact admin.' });
     }
 
     const { lectureId, faceDescriptor } = req.body;
-    const lecture = await Lecture.findById(lectureId).populate('subject', 'name code');
+    const lecture = await lecturesRepo.findByIdWithSubject(lectureId);
     if (!lecture || !lecture.isActive) {
       return res.status(404).json({ message: 'Lecture not found or closed' });
     }
 
-    const existing = await Attendance.findOne({ student: student._id, lecture: lectureId });
+    const existing = await attendanceRepo.findByStudentAndLecture(student.id, lectureId);
     if (existing) {
       const subjectName = lecture.subject?.name || 'this subject';
       return res.status(409).json({
@@ -163,27 +138,19 @@ router.post(
     }
 
     try {
-      const record = await Attendance.create({
-        student: student._id,
-        lecture: lectureId,
+      const record = await attendanceRepo.createAttendance({
+        studentId: student.id,
+        lectureId,
         status: 'present',
       });
-      await record.populate({
-        path: 'lecture',
-        select: 'title scheduledAt subject',
-        populate: { path: 'subject', select: 'name code' },
-      });
-
-      const r = record.toObject();
       return res.status(201).json({
         success: true,
         message: `Marked present for ${lecture.subject?.name || lecture.title}`,
         subjectName: lecture.subject?.name,
-        scannedAt: r.scannedAt,
+        scannedAt: record.scannedAt,
       });
     } catch (e) {
-      if (e.code === 11000) {
-        await lecture.populate('subject');
+      if (e.code === '23505') {
         const subjectName = lecture.subject?.name || 'this subject';
         return res.status(409).json({
           code: 'ALREADY_MARKED',
@@ -197,33 +164,21 @@ router.post(
 
 router.get('/', requireAuth('admin'), async (req, res) => {
   const { lectureId, rollNumber } = req.query;
-  const filter = {};
-  if (lectureId) filter.lecture = lectureId;
-
-  let records = Attendance.find(filter)
-    .populate('student', 'name rollNumber department')
-    .populate({
-      path: 'lecture',
-      select: 'title scheduledAt subject',
-      populate: { path: 'subject', select: 'name code' },
-    })
-    .sort({ scannedAt: -1 });
-
-  records = await records.lean();
+  let records = await attendanceRepo.listForAdmin(lectureId || null);
 
   if (rollNumber) {
-    records = records.filter((r) => r.student?.rollNumber === rollNumber);
+    records = records.filter((r) => r.rollNumber === rollNumber);
   }
 
   res.json(
     records.map((r) => ({
-      id: r._id,
-      studentName: r.student?.name,
-      rollNumber: r.student?.rollNumber,
-      department: r.student?.department,
-      lectureTitle: r.lecture?.title,
-      subjectName: r.lecture?.subject?.name,
-      lectureAt: r.lecture?.scheduledAt,
+      id: r.id,
+      studentName: r.studentName,
+      rollNumber: r.rollNumber,
+      department: r.department,
+      lectureTitle: r.lectureTitle,
+      subjectName: r.subjectName,
+      lectureAt: r.lectureAt,
       status: r.status,
       scannedAt: r.scannedAt,
     }))

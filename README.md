@@ -1,6 +1,6 @@
 # Campus Biometric Attendance Desk
 
-Production-oriented monolithic repo with a facial descriptor pipeline (aligned with **[face-api.js](https://github.com/justadudewhohacks/face-api.js)**) over **React + Express + MongoDB**.
+Production-oriented monolithic repo with a facial descriptor pipeline (aligned with **[face-api.js](https://github.com/justadudewhohacks/face-api.js)**) over **React + Express + Supabase Postgres** (via `pg`).
 
 ## Highlights
 
@@ -12,8 +12,9 @@ Production-oriented monolithic repo with a facial descriptor pipeline (aligned w
 ```
 /project-root
 ├── frontend/           # React (Vite) + Tailwind + face descriptors in-browser
-├── backend/            # Express + Mongoose + JWT + Euclidean face matching
-├── api/index.js        # Vercel serverless bridge (mongoose warm pool)
+├── backend/            # Express + Postgres (Supabase) + JWT + Euclidean face matching
+├── api/index.js        # Vercel serverless bridge (connects DB per invocation)
+├── supabase/migrations # SQL schema to run once in Supabase SQL Editor
 ├── vercel.json         # SPA rewrites & function bundling directives
 ├── package.json        # npm workspaces orchestrator
 └── README.md
@@ -24,7 +25,7 @@ Production-oriented monolithic repo with a facial descriptor pipeline (aligned w
 ## Prerequisites
 
 - Node.js 18+
-- MongoDB reachable URI (MongoDB Atlas is fine).
+- A **Supabase** project (or any Postgres) with `DATABASE_URL` (transaction pooler URI recommended).
 - HTTPS-capable browsers for `getUserMedia` (Safari/WebKit quirks may require HTTPS even on LAN).
 
 Face weights download automatically via CDN fallback; optionally mirror them under `frontend/public/models` for air-gapped networks.
@@ -49,7 +50,7 @@ copy backend\.env.example backend\.env        # PowerShell / Windows CMD users
 cp backend/.env.example backend/.env         # macOS / Linux
 ```
 
-Populate **`MONGODB_URI`**, **`JWT_SECRET`**, and optional tuning (`FACE_MATCH_THRESHOLD`, `DISABLE_FACE_VERIFY`).
+Run **`supabase/migrations/001_attendance_schema.sql`** in the Supabase SQL Editor (creates tables). Then set **`DATABASE_URL`**, **`JWT_SECRET`**, and optional tuning (`FACE_MATCH_THRESHOLD`, `DISABLE_FACE_VERIFY`) in `backend/.env`.
 
 Frontend dev proxies `/api` → `localhost:5000`, so **`VITE_API_URL` may stay blank** locally.
 
@@ -115,14 +116,14 @@ Remember to tighten `CORS_ORIGIN`, rotate `JWT_SECRET`, and keep `DISABLE_FACE_V
 1. Import this repository.
 2. Framework preset stays **Other** — `vercel.json` already defines `buildCommand`, `outputDirectory`, and serverless bindings.
 3. Wire environment variables in the Vercel dashboard:
-   - `MONGODB_URI`
+   - `DATABASE_URL` (Supabase **transaction pooler** connection string; keep `sslmode=require`)
    - `JWT_SECRET`
    - `JWT_EXPIRES_IN`
    - `FACE_MATCH_THRESHOLD`
    - `DISABLE_FACE_VERIFY` (`false`)
    - `CORS_ORIGIN=https://YOUR_VERCEL_PROJECT.vercel.app` (comma-separate multiples if needed).
 
-4. **Important:** Provision **MongoDB Atlas → Network Access → `0.0.0.0/0`** (allow Vercel’s egress IPs) or use VPC peering equivalents for hardened campuses.
+4. **Important:** In Supabase, ensure the DB accepts connections from Vercel (pooler is IPv4-friendly). Apply the migration SQL to production if tables are not there yet.
 
 Because Vercel functions are ephemeral, realtime admin dashboards use **polling (5 s)** — upgrade to sockets on a persistent host when sub-second SLA is mandated.
 
@@ -158,6 +159,6 @@ Always consult institutional IRB/ethics frameworks before biometric production r
 | React cannot reach `/api/*` dev | Confirm backend process + Vite proxy.                                                                   |
 | `Face models failed…` network   | Download weights into `frontend/public/models`.                                                          |
 | `Face does not match`           | Re-register indoors with frontal lighting / adjust `FACE_MATCH_THRESHOLD`.                              |
-| Vercel 500 bootstrap            | Double-check Atlas IP allowlists + secrets + `mongoose` cold start timeouts (upgrade cluster tier).   |
+| Vercel 500 bootstrap            | Double-check `DATABASE_URL`, JWT secret, and that migration SQL ran on the Supabase project.          |
 
 Happy shipping ☀️ Build issues? Inspect server logs (`morgan`), browser network panel, or temporarily enable `DISABLE_FACE_VERIFY=true`.

@@ -2,8 +2,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const User = require('../models/User');
-const Student = require('../models/Student');
+const users = require('../repos/users');
+const students = require('../repos/students');
 const { attachUser, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -24,7 +24,7 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const user = await users.findByEmail(email);
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -34,16 +34,16 @@ router.post(
     }
     let student = null;
     if (user.role === 'student') {
-      student = await Student.findOne({ user: user._id }).lean();
+      student = await students.findByUserId(user.id);
     }
-    const token = signToken(user._id.toString());
+    const token = signToken(user.id);
     return res.json({
       token,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
         role: user.role,
-        studentId: student ? student._id : null,
+        studentId: student ? student.id : null,
       },
     });
   }
@@ -52,14 +52,14 @@ router.post(
 router.get('/me', attachUser(), requireAuth(['admin', 'student']), async (req, res) => {
   let student = null;
   if (req.user.role === 'student') {
-    student = await Student.findOne({ user: req.user._id }).lean();
+    student = await students.findByUserId(req.user.id);
   }
   return res.json({
     user: {
-      id: req.user._id,
+      id: req.user.id,
       email: req.user.email,
       role: req.user.role,
-      studentId: student ? student._id : null,
+      studentId: student ? student.id : null,
     },
   });
 });

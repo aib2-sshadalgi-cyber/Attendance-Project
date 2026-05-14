@@ -35,7 +35,7 @@ export default function Landing() {
             👉 Duplicate scan protection per lecture session with actionable messaging:&nbsp;
             <em>&quot;Scanned for (Subject Name) Lecture&quot;</em>.
           </li>
-          <li>Fully modular React + Express + Mongo deployment path with Vercel-ready API shim.</li>
+          <li>Fully modular React + Express + Supabase Postgres deployment path with Vercel-ready API shim.</li>
           <li>Role-based dashboards for faculty ops and streamlined student biometric flow.</li>
         </ul>
       </div>

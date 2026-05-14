@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const users = require('../repos/users');
 
 function attachUser() {
   return async (req, res, next) => {
@@ -15,7 +15,7 @@ function attachUser() {
         return res.status(500).json({ message: 'Server misconfiguration' });
       }
       const payload = jwt.verify(token, secret);
-      const user = await User.findById(payload.sub).select('-passwordHash').lean();
+      const user = await users.findByIdPublic(payload.sub);
       req.user = user;
       next();
     } catch {
