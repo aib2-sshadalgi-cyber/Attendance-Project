@@ -3,6 +3,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const authRoutes = require('./routes/auth');
 const adminStudentRoutes = require('./routes/adminStudents');
+const adminStaffRoutes = require('./routes/adminStaff');
 const subjectsRoutes = require('./routes/subjects');
 const lecturesRoutes = require('./routes/lectures');
 const attendanceRoutes = require('./routes/attendance');
@@ -33,6 +34,7 @@ function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.use('/api/admin/students', adminStudentRoutes);
+  app.use('/api/admin/staff', adminStaffRoutes);
   app.use('/api/subjects', subjectsRoutes);
   app.use('/api/lectures', lecturesRoutes);
   app.use('/api/attendance', attendanceRoutes);

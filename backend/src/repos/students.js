@@ -34,6 +34,26 @@ async function listWithUserEmail() {
   });
 }
 
+async function listRegisteredWithFaces() {
+  const { rows } = await query(`
+    SELECT s.id, s.user_id, s.name, s.roll_number, s.department, s.face_descriptor, u.email
+    FROM students s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.face_descriptor IS NOT NULL
+    ORDER BY s.roll_number ASC
+  `);
+
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    rollNumber: r.roll_number,
+    department: r.department,
+    email: r.email,
+    faceDescriptor: Array.isArray(r.face_descriptor) ? r.face_descriptor : null,
+  }));
+}
+
 async function findByRollNumber(rollNumber) {
   const { rows } = await query(
     `SELECT id, user_id, name, roll_number, department, face_descriptor FROM students WHERE roll_number = $1`,
@@ -102,6 +122,7 @@ async function setFaceDescriptor(id, faceDescriptor) {
 
 module.exports = {
   listWithUserEmail,
+  listRegisteredWithFaces,
   findByRollNumber,
   findById,
   findByIdWithUser,

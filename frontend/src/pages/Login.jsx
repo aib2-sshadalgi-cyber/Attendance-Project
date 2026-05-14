@@ -16,7 +16,7 @@ export default function Login() {
     setBusy(true);
     try {
       const u = await login(email.trim(), password);
-      navigate(u.role === 'admin' ? '/admin' : '/student');
+      navigate(u.role === 'admin' ? '/admin' : u.role === 'scanner' ? '/scanner' : '/student');
     } catch {
       setError('Invalid credentials or server unreachable.');
     } finally {

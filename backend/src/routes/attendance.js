@@ -4,11 +4,31 @@ const attendanceRepo = require('../repos/attendance');
 const lecturesRepo = require('../repos/lectures');
 const students = require('../repos/students');
 const { attachUser, requireAuth } = require('../middleware/auth');
-const { faceMatch, isValidDescriptor } = require('../utils/faceMatch');
+const { faceMatch, isValidDescriptor, euclideanDistance } = require('../utils/faceMatch');
 
 const router = express.Router();
 
-router.use(attachUser(), requireAuth(['admin', 'student']));
+router.use(attachUser(), requireAuth(['admin', 'student', 'scanner']));
+
+function getFaceThreshold() {
+  return Number(process.env.FACE_MATCH_THRESHOLD || 0.55);
+}
+
+async function findBestStudentMatch(faceDescriptor) {
+  const candidates = await students.listRegisteredWithFaces();
+  let best = null;
+  const threshold = getFaceThreshold();
+
+  for (const student of candidates) {
+    if (!isValidDescriptor(student.faceDescriptor)) continue;
+    const distance = euclideanDistance(faceDescriptor, student.faceDescriptor);
+    if (distance <= threshold && (!best || distance < best.distance)) {
+      best = { ...student, distance };
+    }
+  }
+
+  return best;
+}
 
 router.get('/monitor/:lectureId', requireAuth('admin'), async (req, res) => {
   const { lectureId } = req.params;
@@ -91,6 +111,62 @@ router.get('/my', async (req, res) => {
     })),
   });
 });
+
+router.post(
+  '/staff-scan',
+  body('lectureId').isUUID(),
+  body('faceDescriptor').isArray({ min: 128, max: 128 }),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    if (!['scanner', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'Scanner access required' });
+    }
+
+    const { lectureId, faceDescriptor } = req.body;
+    const lecture = await lecturesRepo.findByIdWithSubject(lectureId);
+    if (!lecture || !lecture.isActive) {
+      return res.status(404).json({ message: 'Lecture not found or closed' });
+    }
+
+    if (!isValidDescriptor(faceDescriptor)) {
+      return res.status(400).json({ message: 'Invalid face descriptor' });
+    }
+
+    const matched = await findBestStudentMatch(faceDescriptor);
+    if (!matched) {
+      return res.status(403).json({ message: 'No registered student matched this face' });
+    }
+
+    const existing = await attendanceRepo.findByStudentAndLecture(matched.id, lectureId);
+    if (existing) {
+      return res.status(409).json({
+        code: 'ALREADY_MARKED',
+        message: `Scanned for (${lecture.subject?.name || lecture.title}) Lecture`,
+      });
+    }
+
+    const record = await attendanceRepo.createAttendance({
+      studentId: matched.id,
+      lectureId,
+      status: 'present',
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `Marked present for ${matched.name}`,
+      subjectName: lecture.subject?.name,
+      student: {
+        id: matched.id,
+        name: matched.name,
+        rollNumber: matched.rollNumber,
+        department: matched.department,
+      },
+      scannedAt: record.scannedAt,
+    });
+  }
+);
 
 router.post(
   '/scan',

@@ -49,7 +49,7 @@ router.post(
   }
 );
 
-router.get('/me', attachUser(), requireAuth(['admin', 'student']), async (req, res) => {
+router.get('/me', attachUser(), requireAuth(['admin', 'student', 'scanner']), async (req, res) => {
   let student = null;
   if (req.user.role === 'student') {
     student = await students.findByUserId(req.user.id);

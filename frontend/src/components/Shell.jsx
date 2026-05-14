@@ -28,6 +28,8 @@ export function Shell({ variant }) {
           { to: '/admin/lectures', label: 'Lectures' },
           { to: '/admin/attendance', label: 'Records' },
         ]
+      : variant === 'scanner'
+      ? [{ to: '/scanner', label: 'Scanner', end: true }]
       : [
           { to: '/student', label: 'Dashboard', end: true },
           { to: '/student/attendance', label: 'Attendance' },

@@ -23,14 +23,14 @@ function mapLecture(l) {
   };
 }
 
-router.get('/', attachUser(), requireAuth(['admin', 'student']), async (req, res) => {
+router.get('/', attachUser(), requireAuth(['admin', 'student', 'scanner']), async (req, res) => {
   const { subjectId, from, to, activeOnly } = req.query;
   const rows = await lecturesRepo.listLectures({
     subjectId: subjectId || null,
     from: from || null,
     to: to || null,
     activeOnly,
-    studentOnlyActive: req.user.role === 'student',
+    studentOnlyActive: req.user.role === 'student' || req.user.role === 'scanner',
   });
   res.json(rows.map(mapLecture));
 });

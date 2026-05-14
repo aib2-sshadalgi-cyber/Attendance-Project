@@ -12,6 +12,7 @@ import AttendanceRecords from './pages/admin/AttendanceRecords';
 import StudentDashboard from './pages/student/Dashboard';
 import AttendanceHistory from './pages/student/AttendanceHistory';
 import ScanAttendance from './pages/student/Scan';
+import Scanner from './pages/scanner/Scanner';
 
 function Protect({ roles, element }) {
   const { loading, user } = useAuth();
@@ -50,6 +51,12 @@ export default function App() {
         <Route index element={<StudentDashboard />} />
         <Route path="attendance" element={<AttendanceHistory />} />
         <Route path="scan" element={<ScanAttendance />} />
+      </Route>
+      <Route
+        path="/scanner/*"
+        element={<Protect roles={['scanner', 'admin']} element={<Shell variant="scanner" />} />}
+      >
+        <Route index element={<Scanner />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
