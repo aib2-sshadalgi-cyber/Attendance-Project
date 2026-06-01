@@ -11,15 +11,6 @@ async function grabDescriptor(video) {
   return Array.from(det.descriptor);
 }
 
-function waitWithTimeout(promise, timeoutMs, timeoutMessage) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-    }),
-  ]);
-}
-
 function waitForVideoReady(video, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(
@@ -47,9 +38,25 @@ export function FaceCapture({
 }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const { ensureModels } = useFaceModels();
-  const [status, setStatus] = useState('idle'); // idle | requesting | capturing | processing | nosupport
+  const { modelsReady, modelError, ensureModels } = useFaceModels();
+  const [status, setStatus] = useState('idle'); // idle | loading-models | requesting | capturing | processing | nosupport
   const [msg, setMsg] = useState('');
+
+  // Load models immediately on mount — don't wait for button click
+  useEffect(() => {
+    setStatus('loading-models');
+    setMsg('Loading face models…');
+    ensureModels()
+      .then(() => {
+        setStatus('idle');
+        setMsg('');
+      })
+      .catch((e) => {
+        setMsg(e?.message || 'Failed to load face models');
+        setStatus('idle');
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -64,9 +71,7 @@ export function FaceCapture({
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       const v = videoRef.current;
-      if (v) {
-        v.srcObject = null;
-      }
+      if (v) v.srcObject = null;
       setStatus('idle');
       setMsg('');
     }
@@ -79,11 +84,11 @@ export function FaceCapture({
       throw new Error('no camera api');
     }
     setStatus('requesting');
-    const video = cameraId
+    const videoConstraints = cameraId
       ? { deviceId: { exact: cameraId }, width: 640, height: 480 }
       : { facingMode: 'user', width: 640, height: 480 };
     const stream = await navigator.mediaDevices.getUserMedia({
-      video,
+      video: videoConstraints,
       audio: false,
     });
     streamRef.current = stream;
@@ -98,10 +103,15 @@ export function FaceCapture({
   async function handleClick() {
     setMsg('');
     try {
-      await ensureModels();
+      // Models should already be loaded from mount — this is instant if cached
+      if (!modelsReady) {
+        setMsg('Face models still loading, please wait…');
+        await ensureModels();
+      }
+
       if (!streamRef.current) await ensureCamera();
 
-      // Wait until video is actually streaming real frames before grabbing descriptor
+      // Wait for video to have actual frames
       const v = videoRef.current;
       await waitForVideoReady(v);
 
@@ -109,12 +119,15 @@ export function FaceCapture({
       if (!descriptor) {
         throw new Error('No face detected. Center your face with good lighting.');
       }
+
       setStatus('processing');
-      await waitWithTimeout(
-        Promise.resolve(onDescriptor?.(descriptor)),
-        30000,
-        'Attendance request timed out. Please try again.'
-      );
+      setMsg('Submitting…');
+
+      // No timeout wrapper — let the API call resolve naturally.
+      // The axios instance has its own timeout; wrapping again caused false timeouts
+      // when models were slow to init on first button press.
+      await onDescriptor?.(descriptor);
+
       setMsg('Captured — processing…');
       setTimeout(() => setMsg(''), 2500);
       setStatus('capturing');
@@ -123,11 +136,11 @@ export function FaceCapture({
       setMsg(text);
       onError?.(text);
       setStatus(streamRef.current ? 'capturing' : 'idle');
-      return;
     }
   }
 
-  const busy = !!disabled || status === 'requesting' || status === 'processing';
+  const modelsLoading = status === 'loading-models';
+  const busy = !!disabled || modelsLoading || status === 'requesting' || status === 'processing';
 
   return (
     <div className="space-y-3">
@@ -135,7 +148,7 @@ export function FaceCapture({
         <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
         {status !== 'capturing' && status !== 'requesting' && status !== 'processing' && (
           <p className="absolute bottom-3 left-3 right-3 rounded-lg bg-black/40 px-3 py-2 text-center text-sm text-white backdrop-blur">
-            Grant camera permission to scan face
+            {modelsLoading ? 'Loading face models…' : 'Grant camera permission to scan face'}
           </p>
         )}
       </div>
@@ -145,9 +158,20 @@ export function FaceCapture({
         onClick={handleClick}
         className="w-full rounded-xl bg-brand-600 px-4 py-3 font-semibold text-white shadow-panel transition hover:bg-brand-700 disabled:opacity-60"
       >
-        {status === 'processing' ? 'Processing…' : busy ? 'Please wait…' : buttonLabel || 'Capture & submit'}
+        {modelsLoading
+          ? 'Loading models…'
+          : status === 'processing'
+          ? 'Processing…'
+          : busy
+          ? 'Please wait…'
+          : buttonLabel || 'Capture & submit'}
       </button>
-      {msg && (
+      {modelError && (
+        <p className="text-center text-sm text-rose-600" role="alert">
+          {modelError}
+        </p>
+      )}
+      {msg && !modelError && (
         <p className="text-center text-sm text-slate-600" role="status">
           {msg}
         </p>
