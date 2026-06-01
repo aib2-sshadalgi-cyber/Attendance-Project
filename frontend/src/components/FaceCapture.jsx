@@ -86,6 +86,7 @@ export function FaceCapture({
       await Promise.resolve(onDescriptor?.(descriptor));
       setMsg('Captured — processing…');
       setTimeout(() => setMsg(''), 2500);
+      setStatus('capturing');
     } catch (e) {
       const text = e?.message || 'Capture failed';
       setMsg(text);
@@ -93,10 +94,6 @@ export function FaceCapture({
       if (status === 'nosupport') return;
       setStatus(streamRef.current ? 'capturing' : 'idle');
       return;
-    } finally {
-      if (status === 'processing') {
-        setStatus('capturing');
-      }
     }
   }
 
