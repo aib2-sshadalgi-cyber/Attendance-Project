@@ -11,6 +11,33 @@ async function grabDescriptor(video) {
   return Array.from(det.descriptor);
 }
 
+function waitWithTimeout(promise, timeoutMs, timeoutMessage) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    }),
+  ]);
+}
+
+function waitForVideoReady(video, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error('Camera took too long to start')),
+      timeoutMs
+    );
+    function check() {
+      if (video?.readyState >= 2 && video?.videoWidth > 0) {
+        clearTimeout(timeout);
+        resolve();
+      } else {
+        requestAnimationFrame(check);
+      }
+    }
+    check();
+  });
+}
+
 export function FaceCapture({
   buttonLabel,
   disabled,
@@ -73,17 +100,21 @@ export function FaceCapture({
     try {
       await ensureModels();
       if (!streamRef.current) await ensureCamera();
-      await new Promise((r) => requestAnimationFrame(r));
+
+      // Wait until video is actually streaming real frames before grabbing descriptor
       const v = videoRef.current;
-      if (!v?.videoWidth) {
-        throw new Error('Camera not ready');
-      }
+      await waitForVideoReady(v);
+
       const descriptor = await grabDescriptor(v);
       if (!descriptor) {
         throw new Error('No face detected. Center your face with good lighting.');
       }
       setStatus('processing');
-      await Promise.resolve(onDescriptor?.(descriptor));
+      await waitWithTimeout(
+        Promise.resolve(onDescriptor?.(descriptor)),
+        30000,
+        'Attendance request timed out. Please try again.'
+      );
       setMsg('Captured — processing…');
       setTimeout(() => setMsg(''), 2500);
       setStatus('capturing');
@@ -91,7 +122,6 @@ export function FaceCapture({
       const text = e?.message || 'Capture failed';
       setMsg(text);
       onError?.(text);
-      if (status === 'nosupport') return;
       setStatus(streamRef.current ? 'capturing' : 'idle');
       return;
     }
@@ -103,7 +133,7 @@ export function FaceCapture({
     <div className="space-y-3">
       <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl bg-slate-900 shadow-inner">
         <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
-        {status !== 'capturing' && status !== 'requesting' && (
+        {status !== 'capturing' && status !== 'requesting' && status !== 'processing' && (
           <p className="absolute bottom-3 left-3 right-3 rounded-lg bg-black/40 px-3 py-2 text-center text-sm text-white backdrop-blur">
             Grant camera permission to scan face
           </p>
