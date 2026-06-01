@@ -21,7 +21,7 @@ export function FaceCapture({
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const { ensureModels } = useFaceModels();
-  const [status, setStatus] = useState('idle'); // idle | requesting | capturing | nosupport
+  const [status, setStatus] = useState('idle'); // idle | requesting | capturing | processing | nosupport
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
@@ -82,7 +82,8 @@ export function FaceCapture({
       if (!descriptor) {
         throw new Error('No face detected. Center your face with good lighting.');
       }
-      onDescriptor(descriptor);
+      setStatus('processing');
+      await Promise.resolve(onDescriptor?.(descriptor));
       setMsg('Captured — processing…');
       setTimeout(() => setMsg(''), 2500);
     } catch (e) {
@@ -90,11 +91,16 @@ export function FaceCapture({
       setMsg(text);
       onError?.(text);
       if (status === 'nosupport') return;
-      setStatus('capturing');
+      setStatus(streamRef.current ? 'capturing' : 'idle');
+      return;
+    } finally {
+      if (status === 'processing') {
+        setStatus('capturing');
+      }
     }
   }
 
-  const busy = !!disabled || status === 'requesting';
+  const busy = !!disabled || status === 'requesting' || status === 'processing';
 
   return (
     <div className="space-y-3">
@@ -112,7 +118,7 @@ export function FaceCapture({
         onClick={handleClick}
         className="w-full rounded-xl bg-brand-600 px-4 py-3 font-semibold text-white shadow-panel transition hover:bg-brand-700 disabled:opacity-60"
       >
-        {busy ? 'Please wait…' : buttonLabel || 'Capture & submit'}
+        {status === 'processing' ? 'Processing…' : busy ? 'Please wait…' : buttonLabel || 'Capture & submit'}
       </button>
       {msg && (
         <p className="text-center text-sm text-slate-600" role="status">

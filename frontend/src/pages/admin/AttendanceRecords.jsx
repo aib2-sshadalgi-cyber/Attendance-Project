@@ -13,21 +13,25 @@ export default function AttendanceRecords() {
   const [scanFeedback, setScanFeedback] = useState(null);
   const [scanBusy, setScanBusy] = useState(false);
 
+  const loadLectures = async () => {
+    const res = await api.get('/api/lectures');
+    setLectures(Array.isArray(res.data) ? res.data : []);
+  };
+
+  const loadRecords = async (lectureId = filters.lectureId, roll = filters.roll) => {
+    const params = new URLSearchParams();
+    if (lectureId) params.set('lectureId', lectureId);
+    if (roll) params.set('rollNumber', roll);
+    const res = await api.get(`/api/attendance?${params.toString()}`);
+    setRecords(Array.isArray(res.data) ? res.data : []);
+  };
+
   useEffect(() => {
-    api
-      .get('/api/lectures')
-      .then((res) => setLectures(Array.isArray(res.data) ? res.data : []))
-      .catch(() => {});
+    loadLectures().catch(() => {});
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (filters.lectureId) params.set('lectureId', filters.lectureId);
-    if (filters.roll) params.set('rollNumber', filters.roll);
-    api
-      .get(`/api/attendance?${params.toString()}`)
-      .then((res) => setRecords(Array.isArray(res.data) ? res.data : []))
-      .catch(() => {});
+    loadRecords().catch(() => {});
   }, [filters.lectureId, filters.roll]);
 
   useEffect(() => {
@@ -101,6 +105,7 @@ export default function AttendanceRecords() {
         title: `Marked ${data.student?.name || 'student'}`,
         subtitle: `${data.student?.rollNumber || ''} • ${data.subjectName || data.message}`.trim(),
       });
+      await loadRecords(scanLectureId, filters.roll);
     } catch (err) {
       const status = err?.response?.status;
       const body = err?.response?.data;
