@@ -11,3 +11,6 @@ export function setAuthToken(token) {
   if (token) api.defaults.headers.common.Authorization = `Bearer ${token}`;
   else delete api.defaults.headers.common.Authorization;
 }
+setInterval(() => {
+  fetch((import.meta.env.VITE_API_URL || '') + '/health').catch(() => {});
+}, 10 * 60 * 1000);

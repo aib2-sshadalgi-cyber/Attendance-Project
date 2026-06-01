@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { FaceCapture } from '../../components/FaceCapture';
+import { ensureFaceModelsLoaded } from '../../hooks/useFaceModels';
 
 export default function AttendanceRecords() {
   const [records, setRecords] = useState([]);
@@ -12,6 +13,11 @@ export default function AttendanceRecords() {
   const [cameras, setCameras] = useState([]);
   const [scanFeedback, setScanFeedback] = useState(null);
   const [scanBusy, setScanBusy] = useState(false);
+
+  // Pre-load face models immediately on page mount — before modal ever opens
+  useEffect(() => {
+    ensureFaceModelsLoaded().catch(() => {});
+  }, []);
 
   const loadLectures = async () => {
     const res = await api.get('/api/lectures');
